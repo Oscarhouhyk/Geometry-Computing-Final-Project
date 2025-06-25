@@ -19,7 +19,6 @@ from torchvision.transforms.functional import InterpolationMode
 
 # from configs.paths import dataroot
 
-
 ## BASE DATASET
 def data_sampler(dataset, shuffle, distributed):
     if distributed:
@@ -49,14 +48,17 @@ def CreateDataset(opt):
         #from datasets.snet_dataset import ShapeNetDataset
         train_dataset = ShapeNetDataset()
         test_dataset = ShapeNetDataset()
+        val_dataset = ShapeNetDataset()
         train_dataset.initialize(opt, 'train', cat=opt.cat, res=opt.res)
         test_dataset.initialize(opt, 'test', cat=opt.cat, res=opt.res)
+        val_dataset.initialize(opt, 'val', cat=opt.cat, res=opt.res)
+        
 
     else:
         raise ValueError("Dataset [%s] not recognized." % opt.dataset_mode)
 
     cprint("[*] Dataset has been created: %s" % (train_dataset.name()), 'blue')
-    return train_dataset, test_dataset
+    return train_dataset, test_dataset, val_dataset
 
 
 
@@ -67,7 +69,7 @@ def get_data_generator(loader):
             yield data
 
 def CreateDataLoader(opt):
-    train_dataset, test_dataset = CreateDataset(opt)
+    train_dataset, test_dataset, val_dataset = CreateDataset(opt)
     print(len(train_dataset), len(test_dataset))
     train_dl = torch.utils.data.DataLoader(
             train_dataset,
@@ -84,9 +86,9 @@ def CreateDataLoader(opt):
             )
 
     test_dl_for_eval = torch.utils.data.DataLoader(
-            test_dataset,
+            val_dataset, # test_dataset
             batch_size=max(int(opt.batch_size // 2), 1),
-            sampler=data_sampler(test_dataset, shuffle=False, distributed=opt.distributed),
+            sampler=data_sampler(val_dataset, shuffle=False, distributed=opt.distributed),
             drop_last=False,
         )
 

@@ -51,6 +51,8 @@ def sdf_loss(model, coords, gt_sdf, gt_grad, lambda_weight=0.01):
 
     loss = loss_sdf + lambda_weight * loss_grad
     return loss
+
+
 class VectorQuantizer(nn.Module):
     """
     see https://github.com/MishaLaskin/vqvae/blob/d761a999e2267766400dc646d82d3ac3657771d4/models/quantizer.py
