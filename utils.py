@@ -5,6 +5,9 @@ import numpy as np
 import trimesh
 from skimage import measure
 import numpy as np
+from torch import distributed as dist
+
+
 #Fourier encoding
 device = torch.device('cuda:0')
 def extract_mesh(model, resolution=128, bounding_box=1.2, threshold=0.0, filename='output.obj'):
@@ -78,22 +81,25 @@ class VectorQuantizer(nn.Module):
         Inputs the output of the encoder network z and maps it to a discrete
         one-hot vector that is the index of the closest embedding vector e_j
         z (continuous) -> z_q (discrete)
-        z.shape = (batch, channel, height, width)
+        z.shape = (batch, channel, depth, height, width) for 3D data
         quantization pipeline:
-            1. get encoder input (B,C,H,W)
-            2. flatten input to (B*H*W,C)
+            1. get encoder input (B,C,D,H,W)
+            2. flatten input to (B*D*H*W,C)
         """
-        # reshape z -> (batch, height, width, channel) and flatten
-        z = z.permute(0, 2, 3, 1).contiguous()
-        z_flattened = z.view(-1, self.e_dim)
-        # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
+        # 检查输入维度
+        if len(z.shape) == 5:  # 3D 数据 (B,C,D,H,W)
+            # 重新排列维度为 (batch, depth, height, width, channel)
+            z = z.permute(0, 2, 3, 4, 1).contiguous()
+            z_flattened = z.view(-1, self.e_dim)
+        else:  # 2D 数据 (B,C,H,W) - 原始代码逻辑
+            z = z.permute(0, 2, 3, 1).contiguous()
+            z_flattened = z.view(-1, self.e_dim)
 
+        # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
         d = torch.sum(z_flattened ** 2, dim=1, keepdim=True) + \
             torch.sum(self.embedding.weight**2, dim=1) - 2 * \
             torch.matmul(z_flattened, self.embedding.weight.t())
 
-        ## could possible replace this here
-        # #\start...
         # find closest encodings
         min_encoding_indices = torch.argmin(d, dim=1).unsqueeze(1)
 
@@ -101,19 +107,8 @@ class VectorQuantizer(nn.Module):
             min_encoding_indices.shape[0], self.n_e).to(z)
         min_encodings.scatter_(1, min_encoding_indices, 1)
 
-        # dtype min encodings: torch.float32
-        # min_encodings shape: torch.Size([2048, 512])
-        # min_encoding_indices.shape: torch.Size([2048, 1])
-
         # get quantized latent vectors
         z_q = torch.matmul(min_encodings, self.embedding.weight).view(z.shape)
-        #.........\end
-
-        # with:
-        # .........\start
-        #min_encoding_indices = torch.argmin(d, dim=1)
-        #z_q = self.embedding(min_encoding_indices)
-        # ......\end......... (TODO)
 
         # compute loss for embedding
         loss = torch.mean((z_q.detach()-z)**2) + self.beta * \
@@ -127,13 +122,15 @@ class VectorQuantizer(nn.Module):
         perplexity = torch.exp(-torch.sum(e_mean * torch.log(e_mean + 1e-10)))
 
         # reshape back to match original input shape
-        z_q = z_q.permute(0, 3, 1, 2).contiguous()
+        if len(z.shape) == 5:  # 3D 数据
+            z_q = z_q.permute(0, 4, 1, 2, 3).contiguous()
+        else:  # 2D 数据
+            z_q = z_q.permute(0, 3, 1, 2).contiguous()
 
         return z_q, loss, (perplexity, min_encodings, min_encoding_indices)
 
     def get_codebook_entry(self, indices, shape):
-        # shape specifying (batch, height, width, channel)
-        # TODO: check for more easy handling with nn.Embedding
+        # shape specifying (batch, height, width, channel) or (batch, depth, height, width, channel)
         min_encodings = torch.zeros(indices.shape[0], self.n_e).to(indices)
         min_encodings.scatter_(1, indices[:,None], 1)
 
@@ -144,6 +141,36 @@ class VectorQuantizer(nn.Module):
             z_q = z_q.view(shape)
 
             # reshape back to match original input shape
-            z_q = z_q.permute(0, 3, 1, 2).contiguous()
+            if len(shape) == 5:  # 3D 数据 (B,D,H,W,C)
+                z_q = z_q.permute(0, 4, 1, 2, 3).contiguous()
+            else:  # 2D 数据 (B,H,W,C)
+                z_q = z_q.permute(0, 3, 1, 2).contiguous()
 
         return z_q
+    
+
+
+def get_rank():
+    if not dist.is_available():
+        return 0
+
+    if not dist.is_initialized():
+        return 0
+
+    return dist.get_rank()
+
+
+def synchronize(local_rank=0):
+    if not dist.is_available():
+        return
+
+    if not dist.is_initialized():
+        return
+
+    world_size = dist.get_world_size()
+
+    if world_size == 1:
+        return
+
+    dist.barrier()
+    # dist.barrier(device_ids=[local_rank])

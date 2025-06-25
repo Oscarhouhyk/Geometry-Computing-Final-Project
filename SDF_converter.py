@@ -32,8 +32,8 @@ parser.add_argument('--sdf_size', type=int, default=256)
 args = parser.parse_args()
 
 size = args.sdf_size        # resolution of SDF
-size = 128                 # resolution of SDF
-level = 0.015            # 2/128 = 0.015625
+size = 64                 # resolution of SDF # 128
+level = 0.03125            # 2/128 = 0.015625 
 shape_scale = 0.5    # rescale the shape into [-0.5, 0.5]
 project_folder = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 root_folder = os.path.join(project_folder, 'final_project/data/ShapeNet')
@@ -195,6 +195,7 @@ def run_mesh2sdf_mp():
 
             # save
             np.savez(filename_box, bbmax=bbmax, bbmin=bbmin, mul=mesh_scale)
+            
             np.save(filename_npy, sdf)
             mesh_new.export(filename_obj)
 

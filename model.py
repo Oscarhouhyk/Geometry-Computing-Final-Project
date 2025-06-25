@@ -8,11 +8,11 @@ class LatentEncoder(nn.Module):#Assume input(B*64*64*64)->
     def __init__(self):
         super().__init__()
         self.net=nn.Sequential(
-        nn.Conv3d(1, 16, kernel_size=3, stride=2, padding=1),
-        F.relu(),
-        nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1),
-        F.relu(),
-        nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)
+        nn.Conv3d(1, 16, kernel_size=4, stride=2, padding=1),
+        nn.ReLU(),
+        nn.Conv3d(16, 32, kernel_size=4, stride=2, padding=1),
+        nn.ReLU(),
+        nn.Conv3d(32, 64, kernel_size=4, stride=2, padding=1)
         )
     def forward(self, x):
         x = self.net(x)
@@ -22,22 +22,30 @@ class LatentDecoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.net=nn.Sequential(
-        nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1),
-        F.relu(),
+        nn.ConvTranspose3d(64, 32, kernel_size=4, stride=2, padding=1),
+        nn.ReLU(),
+        nn.ConvTranspose3d(32, 16, kernel_size=4, stride=2, padding=1),
+        nn.ReLU(),
+        nn.ConvTranspose3d(16, 1, kernel_size=4, stride=2, padding=1)
+        )
+
+        """ nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1),
+        nn.ReLU(),
         nn.ConvTranspose3d(32, 16, kernel_size=3, stride=2, padding=1),
-        F.relu(),
-        nn.ConvTranspose3d(16, 1, kernel_size=3, stride=2, padding=1)
-        )   
+        nn.ReLU(),
+        nn.ConvTranspose3d(16, 1, kernel_size=3, stride=2, padding=1) """
+
+
     def forward(self, x):
         x = self.net(x)
         return x
     pass
 class VQVAE(nn.Module):
-    def __init__(self, num_embeddings=512, embedding_dim=128):
+    def __init__(self, num_embeddings=512, embedding_dim=64, beta=0.25):
         super().__init__()
         self.encoder = LatentEncoder()
         self.decoder = LatentDecoder()
-        self.quantizer = VectorQuantizer(num_embeddings, embedding_dim)
+        self.quantizer = VectorQuantizer(num_embeddings, embedding_dim, beta)
     def forward(self, x):
         z_e = self.encoder(x)
         z_q, loss_vq, _ = self.quantizer(z_e)
