@@ -53,18 +53,23 @@ class VQVAE(nn.Module):
         return x_recon, loss_vq
     pass
 class UNet3D(nn.Module):
-    def __init__(self,input_dim):
+    def __init__(self,input_dim,timestep_dim=256):
         super().__init__()
-        self.encoder1 = nn.Conv3d(input_dim, 64, kernel_size=3, padding=1)
-        self.encoder2 = nn.Conv3d(64, 128, kernel_size=3, padding=1)
-        self.encoder3 = nn.Conv3d(128, 256, kernel_size=3, padding=1)
-        self.decoder1 = nn.ConvTranspose3d(256, 128, kernel_size=3, padding=1)
-        self.decoder2 = nn.ConvTranspose3d(128, 64, kernel_size=3, padding=1)
-        self.decoder3 = nn.ConvTranspose3d(64, input_dim, kernel_size=3, padding=1)
-    def forward(self, x):#predict the noise for the diffusion model
-        x1= F.relu(self.encoder1(x))
-        x2 = F.relu(self.encoder2(x1))
-        x3 = F.relu(self.encoder3(x2))
+        self.time_mlp = nn.sequential(nn.Linear(1,timestep_dim),nn.ReLU(),nn.Linear(timestep_dim,timestep_dim))
+        self.encoder1 = nn.Conv3d(input_dim, 64, kernel_size=4, stride=2, padding=1)
+        self.encoder2 = nn.Conv3d(64, 128, kernel_size=4, stride=2, padding=1)
+        self.encoder3 = nn.Conv3d(128, 256, kernel_size=4, stride=2, padding=1)
+        self.decoder1 = nn.ConvTranspose3d(256, 128, kernel_size=4, stride=2, padding=1)
+        self.decoder2 = nn.ConvTranspose3d(128, 64, kernel_size=4, stride=2, padding=1)
+        self.decoder3 = nn.ConvTranspose3d(64, input_dim, kernel_size=4, stride=2, padding=1)
+        self.time_proj1 = nn.linear(timestep_dim, 64)
+        self.time_proj2 = nn.linear(timestep_dim, 128)
+        self.time_proj3 = nn.linear(timestep_dim, 256)
+    def forward(self, x, timestep):#predict the noise for the diffusion model
+        time_embedding = self.time_mlp(timestep.unsqueeze(-1))  # (B, timestep_dim)
+        x1= F.relu(self.encoder1(x)+ self.time_proj1(time_embedding).view(x.shape[0], 64, 1, 1, 1))  
+        x2 = F.relu(self.encoder2(x1)+ self.time_proj2(time_embedding).view(x.shape[0], 128, 1, 1, 1))
+        x3 = F.relu(self.encoder3(x2)+ self.time_proj3(time_embedding).view(x.shape[0], 256, 1, 1, 1))
         x4 = F.relu(self.decoder1(x3))
         x5 = F.relu(self.decoder2(x4))
         x6 = self.decoder3(x5)

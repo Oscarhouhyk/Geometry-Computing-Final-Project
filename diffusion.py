@@ -32,7 +32,7 @@ class Diffusion(nn.Module):
     def p_losses(self, x0, t):
         noise = torch.randn_like(x0)
         x_noisy = self.q_sample(x0, t, noise)
-        noise_pred = self.model(x_noisy)  # 3D U-Net输出预测噪声
+        noise_pred = self.model(x_noisy, t)  # 3D U-Net输出预测噪声，加入时间步
         loss = nn.MSELoss()(noise_pred, noise)
         return loss
 
@@ -40,9 +40,9 @@ class Diffusion(nn.Module):
     def p_sample(self, x, t):
         # 确保t是一个标量并且在正确的设备上
         t = torch.tensor([t], device=self.device)
-        
+        t_in = torch.full((x.shape[0],), t[0], device=self.device, dtype=torch.long)
         # 预测噪声
-        noise_pred = self.model(x)
+        noise_pred = self.model(x, t_in)  # 3D U-Net输出预测噪声，加入时间步
         
         # 计算去噪后的平均值
         alpha_t = self.alpha_bars[t]
@@ -62,4 +62,10 @@ class Diffusion(nn.Module):
         else:
             x = mean
         
+        return x
+    
+    def p_sample_loop(self, shape):
+        x = torch.randn(shape, device=self.device)
+        for t in reversed(range(self.timesteps)):
+            x = self.p_sample(x, t)
         return x
