@@ -70,8 +70,8 @@ class UNet3D(nn.Module):
         x1= F.relu(self.encoder1(x)+ self.time_proj1(time_embedding).view(x.shape[0], 64, 1, 1, 1))  
         x2 = F.relu(self.encoder2(x1)+ self.time_proj2(time_embedding).view(x.shape[0], 128, 1, 1, 1))
         x3 = F.relu(self.encoder3(x2)+ self.time_proj3(time_embedding).view(x.shape[0], 256, 1, 1, 1))
-        x4 = F.relu(self.decoder1(x3))
-        x5 = F.relu(self.decoder2(x4))
+        x4 = F.relu(self.decoder1(x3)+x2)
+        x5 = F.relu(self.decoder2(x4)+x1)
         x6 = self.decoder3(x5)
         return x6
 #print("torch version:", torch.__version__)
